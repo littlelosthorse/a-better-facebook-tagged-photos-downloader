@@ -1,3 +1,5 @@
+#This is a work in progress so please leave it alone until it's done x
+
 # A Better Facebook Photo Downloader
 This tool is a fork of https://github.com/jcontini/facebook-photos-download/tree/master
 
