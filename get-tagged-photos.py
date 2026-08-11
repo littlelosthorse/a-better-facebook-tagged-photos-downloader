@@ -51,11 +51,42 @@ def get_main_photo_url(driver):
     return None
 
 def get_photo_location(driver):
-    """Extracts place tags (location) associated with the open photo."""
+    """Extracts place tags across multiple modern Facebook lightbox DOM structures."""
     try:
-        place_links = driver.find_elements(By.XPATH, "//a[contains(@href, '/places/') or contains(@href, 'facebook.com/places')]")
-        for link in place_links:
+        # Strategy 1: Check standard FB place / location link patterns
+        selectors = [
+            "//a[contains(@href, '/places/')]",
+            "//a[contains(@href, 'facebook.com/places')]",
+            "//a[contains(@href, 'location_id=')]",
+            "//a[contains(@href, '/pages/') and contains(@href, 'type=place')]"
+        ]
+        for selector in selectors:
+            links = driver.find_elements(By.XPATH, selector)
+            for link in links:
+                text = link.text.strip()
+                if text and not text.startswith("http"):
+                    return text
+
+        # Strategy 2: Look for 'at [Location]' links in post header text
+        header_links = driver.find_elements(By.XPATH, "//span[contains(text(), ' at ') or contains(text(), ' in ')]/following-sibling::a | //span[contains(text(), ' at ') or contains(text(), ' in ')]//a")
+        for link in header_links:
             text = link.text.strip()
+            if text:
+                return text
+
+        # Strategy 3: Scan all clickable links in photo header panel for location metadata
+        panel_links = driver.find_elements(By.XPATH, "//div[contains(@role, 'dialog')]//a | //div[contains(@aria-label, 'Photo')]//a")
+        for link in panel_links:
+            href = link.get_attribute("href") or ""
+            if any(k in href for k in ["/places/", "location_id", "place", "geo"]):
+                text = link.text.strip()
+                if text:
+                    return text
+
+        # Strategy 4: Fallback to text inside elements with location-related ARIA labels
+        aria_elements = driver.find_elements(By.XPATH, "//*[contains(@aria-label, 'Location') or contains(@aria-label, 'location') or contains(@aria-label, 'at ')]")
+        for elem in aria_elements:
+            text = elem.text.strip()
             if text:
                 return text
     except Exception:
@@ -111,7 +142,7 @@ def index_photos(driver):
     seen_fb_urls = set()
     
     consecutive_duplicates = 0
-    MAX_CONSECUTIVE_DUPLICATES = 5  # Stop after 5 already-indexed photos in a row
+    MAX_CONSECUTIVE_DUPLICATES = 5
 
     print("\nStarting indexing...")
 
@@ -125,7 +156,7 @@ def index_photos(driver):
 
             if media_url:
                 seen_fb_urls.add(current_fb_url)
-                consecutive_duplicates = 0  # Reset circuit breaker on finding a new photo
+                consecutive_duplicates = 0
 
                 doc = {
                     'fb_url': current_fb_url,
@@ -140,7 +171,7 @@ def index_photos(driver):
                 }
 
                 data['tagged'].append(doc)
-                loc_str = f" [Location: {location_text}]" if location_text else ""
+                loc_str = f" [Location: '{location_text}']" if location_text else " [Location: None]"
                 print(f"{len(data['tagged'])}) Found photo{loc_str}: {current_fb_url}")
 
                 with open('tagged.json', 'w') as f:
@@ -151,12 +182,10 @@ def index_photos(driver):
             consecutive_duplicates += 1
             print(f"Skipping already-indexed photo ({consecutive_duplicates}/{MAX_CONSECUTIVE_DUPLICATES})...")
 
-        # Stop indexing if we hit the consecutive duplicate limit
         if consecutive_duplicates >= MAX_CONSECUTIVE_DUPLICATES:
             print(f"\nReached {MAX_CONSECUTIVE_DUPLICATES} consecutive duplicates. All photos indexed!")
             break
 
-        # Move to next photo
         try:
             driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ARROW_RIGHT)
         except Exception:
@@ -210,7 +239,7 @@ def download_photos():
                         print("Failed to download image. Skipping.")
                         break
 
-            # Embed EXIF Data (Date, Description, and GPS Location)
+            # Embed EXIF Data
             try:
                 exif_dict = piexif.load(new_filename)
                 exif_date = datetime.today().strftime("%Y:%m:%d %H:%M:%S")
@@ -219,14 +248,13 @@ def download_photos():
                 exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal] = exif_date
                 exif_dict['0th'][piexif.ImageIFD.ImageDescription] = img_desc.encode('utf-8')
 
-                # Handle Geocoding & GPS metadata
                 location_name = d.get('fb_location')
                 if location_name:
                     lat, lon = geocode_location(location_name)
                     if lat is not None and lon is not None:
                         gps_dict = get_gps_exif(lat, lon)
                         exif_dict['GPS'] = gps_dict
-                        print(f" -> Geotagged at {location_name} ({lat}, {lon})")
+                        print(f" -> Geotagged at '{location_name}' ({lat}, {lon})")
 
                 piexif.insert(piexif.dump(exif_dict), new_filename)
             except Exception as e:
