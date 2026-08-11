@@ -1,4 +1,4 @@
-# A Safer Facebook Photo Downloader
+# A Better Facebook Photo Downloader
 This tool is a fork of https://github.com/jcontini/facebook-photos-download/tree/master
 
 I wanted to download all of my tagged photos from Facebook and the [Tagged-Photo-Exporter](https://chromewebstore.google.com/detail/tagged-photo-exporter/cicalpgkgmacgnbnnkhdgpnicipnihgo?hl=en) Google Chrome extension that appears free but then asks for payment while withholding metadata rubbed me the wrong way, so found the original of this tool linked above and made some changes to work on modern (2026) Facebook.
